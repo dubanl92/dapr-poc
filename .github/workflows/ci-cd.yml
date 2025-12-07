@@ -1,0 +1,64 @@
+
+name: CI/CD Dapr PoC
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      name: Build & push Docker images
+        run: |
+          ECR_URI=${{ steps.login-ecr.outputs.registry }}
+          docker build -t $ECR_URI/dapr-poc/api-gateway:latest services/api-gateway
+          docker build -t $ECR_URI/dapr-poc/orders-service:latest services/orders-service
+          docker build -t $ECR_URI/dapr-poc/inventory-service:latest services/inventory-service
+          docker push $ECR_URI/dapr-poc/api-gateway:latest
+          docker push $ECR_URI/dapr-poc/orders-service:latest
+          docker push $ECR_URI/dapr-poc/inventory-service:latest
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}"
+
+      - name: Install Dapr via Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          helm repo add dapr https://dapr.github.io/helm-charts
+          helm repo update
+          helm upgrade --install dapr dapr/dapr --namespace dapr-system --create-namespace
+
+      - name: Replace ECR_URI in manifests
+        run: |
+          ECR_URI=${{ steps.login-ecr.outputs.registry }}
+          sed -i "s|<ECR_URI>|$ECR_URI|g" k8s/*.yaml
+
+      - name: Apply manifests
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/sa-api.yaml -f k8s/sa-orders.yaml -f k8s/sa-inventory.yaml
+          kubectl apply -n dapr-poc -f components/aws/
+          kubectl apply -f k8s/api-deploy.yaml -f k8s/orders-deploy.yaml -f k8s/inventory-deploy.yaml
