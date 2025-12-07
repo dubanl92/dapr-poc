@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 import httpx, os, time
 
@@ -13,9 +14,15 @@ TOPIC = "orders.created"
 async def create_order(order: dict):
     enriched = {"id": order["id"], "items": order.get("items", []), "ts": int(time.time()*1000)}
     async with httpx.AsyncClient() as client:
-        await client.post(f"{DAPR_BASE}/v1.0/state/{STATE_NAME}",
-                          json=[{"key": f"order-{enriched['id']}", "value": enriched}],
-                          timeout=10)
-        await client.post(f"{DAPR_BASE}/v1.0/publish/{PUBSUB_NAME}/{TOPIC}",
-                          json=enriched, timeout=10)
+        # 👇 Corrección: usar comillas simples dentro del f-string
+        await client.post(
+            f"{DAPR_BASE}/v1.0/state/{STATE_NAME}",
+            json=[{"key": f"order-{enriched['id']}", "value": enriched}],
+            timeout=10
+        )
+        await client.post(
+            f"{DAPR_BASE}/v1.0/publish/{PUBSUB_NAME}/{TOPIC}",
+            json=enriched,
+            timeout=10
+        )
     return {"ok": True, "id": enriched["id"]}
