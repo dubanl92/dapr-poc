@@ -1,0 +1,17 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: messagebus
+  namespace: dapr-poc
+spec:
+  type: pubsub.aws.sns.sqs
+  version: v1
+  metadata:
+    - name: region
+      value: us-east-1
+    - name: sqsQueueName
+      value: dapr-orders-queue
+    - name: snsTopicName
+      value: dapr-orders-topic
+    - name: consumerID
+      value: inventory-service
